@@ -643,3 +643,761 @@
     octx.drawImage(canvas, minX, minY, out.width, out.height, 0, 0, out.width, out.height);
     return out.toDataURL('image/jpeg', 0.92);
   }
+
+  /* ---------- étapes -------------------------------------------------------- */
+  const ETAPES = ['Client', 'Équipement', 'Intervention', 'Fluide', 'Signatures'];
+
+  function etapeEquipement() {
+    const apercu = el('div', { class: 'photo' },
+      fiche.photo ? el('img', { src: fiche.photo, alt: 'Plaque signalétique' })
+        : el('div', { class: 'ph' }, 'Photo de la plaque signalétique', el('br'), el('small', {}, 'conservée avec la fiche')));
+
+    const prendre = async (ev) => {
+      const file = ev.currentTarget.files && ev.currentTarget.files[0];
+      ev.currentTarget.value = '';
+      if (file) await importerPhoto(file);
+    };
+
+    const importerPhoto = async (file) => {
+      analyse.enCours = false;
+      annoncerAnalyse('Ouverture de la photo…', false);
+
+      let image;
+      try {
+        image = await decoderImage(file);
+      } catch (e) {
+        const nom = (file.name || '').toLowerCase();
+        annoncerAnalyse(
+          /\.hei[cf]$/.test(nom) || /hei[cf]/.test(file.type || '')
+            ? "Photo au format HEIC, que ce navigateur ne sait pas ouvrir. Sur l'iPhone : Réglages > Appareil photo > Formats > Le plus compatible, puis reprends la photo."
+            : "Photo illisible (" + (file.type || 'format inconnu') + '). Essaie une autre photo ou reprends-la avec l\'appareil photo.',
+          true);
+        return;
+      }
+
+      try {
+        fiche.photo = versJpeg(image, 1100, 0.62);
+        photoAnalyse = versJpeg(image, 1400, 0.9);
+      } catch (e) {
+        annoncerAnalyse('Photo trop grande pour cet appareil : reprends-la en résolution plus basse.', true);
+        return;
+      }
+      if (image.close) { try { image.close(); } catch (e) { /* rien */ } }
+
+      if (!sauverBrouillon()) {
+        annoncerAnalyse("Mémoire du navigateur pleine : la photo n'est pas conservée. Exporte ta sauvegarde depuis Fiches.", true);
+      }
+      apercu.textContent = '';
+      apercu.appendChild(el('img', { src: fiche.photo, alt: 'Plaque signalétique' }));
+
+      const sample = await capaciteAnalyse();
+      construire();
+      if (sample) {
+        void lirePlaque(false);
+      } else {
+        annoncerAnalyse(
+          "Photo enregistrée. La lecture automatique n'est disponible que sur la version publiée en ligne : "
+          + 'ici, colle le texte de la plaque ci-dessous.',
+          false);
+      }
+    };
+
+    const texte = el('textarea', { rows: 3, placeholder: "Coller ici le texte de la plaque (iPhone : appareil photo → sélectionner le texte → copier)" });
+    const analyser = async () => {
+      const contenu = texte.value.trim();
+      if (!contenu) { annoncerAnalyse('Colle d\'abord le texte de la plaque.', true); return; }
+
+      await capaciteAnalyse();
+
+      // Quand la lecture est disponible, c'est Claude qui structure le texte :
+      // il encaisse le désordre, les tableaux et les découpages approximatifs.
+      if (analyse.texte) {
+        analyse.enCours = true;
+        annoncerAnalyse('', false);
+        try {
+          const lu = await analyse.texte.json(inviteTexte(contenu), { modelTier: 'default' });
+          analyse.enCours = false;
+          const repris = appliquerLecture(lu);
+          if (!repris.length) {
+            annoncerAnalyse((lu && lu.lisible === false)
+              ? "Ce texte ne ressemble pas à une plaque signalétique."
+              : "Rien d'exploitable dans ce texte.", true);
+            return;
+          }
+          analyse.message = 'Repris du texte : ' + repris.join(', ') + '. Vérifie chaque valeur.';
+          analyse.erreur = false;
+          construire();
+          return;
+        } catch (erreur) {
+          analyse.enCours = false;
+          const code = erreur && erreur.code;
+          if (code !== 'cancelled') {
+            annoncerAnalyse((MESSAGES_IA[code] || 'Lecture impossible pour le moment.')
+              + ' Analyse simple appliquée.', true);
+          }
+        }
+      }
+
+      // Repli sans IA : reconnaissance par motifs.
+      const res = analyserPlaque(contenu);
+      const touches = [];
+      for (const [cle, brut] of Object.entries(res)) {
+        if (!brut) continue;
+        fiche[cle] = cle === 'charge' ? String(brut).replace('.', ',') : brut;
+        touches.push(cle);
+      }
+      if (!touches.length) { annoncerAnalyse('Rien de reconnu dans ce texte.', true); return; }
+      sauverBrouillon();
+      analyse.message = 'Repris du texte : ' + touches.join(', ') + '. Vérifie chaque valeur.';
+      analyse.erreur = false;
+      construire();
+    };
+
+    // La disponibilité de la lecture est vérifiée dès l'ouverture de l'étape,
+    // pas seulement au moment de la photo : l'utilisateur sait à quoi s'attendre.
+    if (analyse.capacite === undefined) {
+      capaciteAnalyse().then(() => construire()).catch(() => majEtatAnalyse());
+    }
+    apercu.__importer = (file) => importerPhoto(file);
+
+    return el('div', {},
+      el('div', { class: 'card' },
+        el('h2', {}, 'Scanner la plaque'),
+        el('p', {}, 'Photographie la plaque : les champs se remplissent juste en dessous.'),
+        el('div', { class: 'photo-actions' },
+          el('label', { class: 'filebtn' }, 'Prendre une photo',
+            el('input', { type: 'file', accept: 'image/*', capture: 'environment', onchange: prendre })),
+          el('label', { class: 'filebtn' }, 'Choisir une photo',
+            el('input', { type: 'file', accept: 'image/*', onchange: prendre }))),
+        el('div', { style: 'margin-top:10px' }, apercu),
+        el('div', { id: 'etat-analyse', style: 'margin-top:10px' }),
+        fiche.photo && analyse.capacite
+          ? el('button', {
+              type: 'button', class: 'btn block', style: 'margin-top:8px',
+              disabled: analyse.enCours,
+              onclick: () => { void lirePlaque(true); },
+            }, analyse.enCours ? 'Lecture en cours…' : 'Relire la photo')
+          : null,
+        el('button', {
+          type: 'button', class: 'btn block', style: 'margin-top:8px',
+          onclick: async () => {
+            try {
+              if (!navigator.clipboard || !navigator.clipboard.read) throw new Error('indisponible');
+              const elements = await navigator.clipboard.read();
+              for (const item of elements) {
+                const type = item.types.find((t) => t.startsWith('image/'));
+                if (type) { await importerPhoto(new File([await item.getType(type)], 'plaque', { type })); return; }
+              }
+              annoncerAnalyse("Aucune image dans le presse-papiers : copie d'abord la photo, puis reviens ici.", true);
+            } catch (e) {
+              annoncerAnalyse("Ce navigateur ne permet pas de coller une image. Utilise les deux boutons ci-dessus.", true);
+            }
+          },
+        }, 'Coller une image copiée'),
+        el('div', { class: 'legend' }, 'Ou coller le texte de la plaque'),
+        el('button', {
+          type: 'button', class: 'btn dark block',
+          onclick: async () => {
+            try {
+              if (!navigator.clipboard || !navigator.clipboard.readText) throw new Error('indisponible');
+              const contenu = await navigator.clipboard.readText();
+              if (!contenu || !contenu.trim()) {
+                annoncerAnalyse('Le presse-papiers est vide : lance d\'abord le raccourci qui lit la plaque.', true);
+                return;
+              }
+              texte.value = contenu;
+              await analyser();
+            } catch (e) {
+              annoncerAnalyse("Ce navigateur ne permet pas de lire le presse-papiers. Colle le texte à la main dans le cadre ci-dessous.", true);
+            }
+          },
+        }, 'Coller le texte copié et analyser'),
+        el('p', { class: 'tiny', style: 'margin:8px 0 10px' },
+          'Après le raccourci iPhone qui lit la plaque : un appui ici et les champs se remplissent.'),
+        texte,
+        el('button', { type: 'button', class: 'btn block', style: 'margin-top:8px',
+          onclick: () => { void analyser(); } }, 'Analyser le texte ci-dessus')),
+
+      el('div', { class: 'card' },
+        el('h2', {}, 'Équipement'),
+        el('p', {}, 'Vérifie chaque valeur avant de continuer.'),
+
+        el('div', { class: 'legend' }, 'Modèle'),
+        el('div', { class: 'grid two' },
+          champ('Marque', 'marque', { placeholder: 'Ex. Fujitsu' }),
+          champ('Modèle', 'modele', { placeholder: 'Ex. WOYA060KLT' })),
+
+        el('div', { class: 'legend' }, 'Numéro de série'),
+        champ('N° de série', 'serie', { placeholder: 'Ex. T194348' }),
+
+        el('div', { class: 'legend' }, 'Gaz'),
+        el('div', { class: 'grid two' },
+          champ('Fluide frigorigène', 'fluide', {
+            type: 'select',
+            options: KezLogic.FLUIDES.map((f) => ({ value: f.code, label: f.nom + '  (PRG ' + f.prg + ')' })),
+          }),
+          champ('Charge totale (kg)', 'charge', { type: 'text', inputMode: 'decimal',
+            hint: 'après intervention', placeholder: 'Ex. 0,970' })),
+
+        el('div', { class: 'legend' }, 'Emplacement'),
+        champ('Localisation', 'localisation', { hint: 'facultatif', placeholder: 'Ex. Local technique, toiture bâtiment A' })),
+
+      el('div', { class: 'card' },
+        el('h2', {}, 'Lecture réglementaire'),
+        el('div', { id: 'reglementaire' })));
+  }
+
+  function etapeClient() {
+    return el('div', {},
+      el('div', { class: 'card' },
+        el('h2', {}, 'Mon entreprise'),
+        el('p', {}, "Cadre [1] du CERFA. Repris de tes réglages, à vérifier d'un coup d'œil."),
+        el('div', { class: 'grid two' },
+          champ('N° de fiche', 'ficheNo', { placeholder: '2026-001' }),
+          champ("Date de l'intervention", 'dateIntervention', { type: 'date' }),
+          champ('Raison sociale', 'operateurNom', { full: true, placeholder: 'KEZ Énergie' }),
+          champ('Adresse', 'operateurAdresse', { type: 'textarea', rows: 2, full: true }),
+          champ('SIRET', 'operateurSiret', { placeholder: '000 000 000 00000' }),
+          champ("N° d'attestation de capacité", 'attestationNo', { placeholder: 'Ex. AC-31-2027-0001' })),
+        el('p', { class: 'tiny', style: 'margin:10px 0 0' },
+          'Ces valeurs se règlent une fois pour toutes dans Réglages.')),
+
+      el('div', { class: 'card' },
+        el('h2', {}, 'Client'),
+        el('p', {}, 'Le détenteur de l\'équipement — cadre [2] du CERFA.'),
+        el('div', { class: 'grid two' },
+          champ('Nom ou raison sociale', 'detenteurNom', { full: true, placeholder: 'Nom, prénom ou société' }),
+          champ('Adresse', 'detenteurAdresse', { type: 'textarea', rows: 2, full: true,
+            placeholder: "Adresse complète du lieu de l'équipement" }),
+          champ('SIRET', 'detenteurSiret', { hint: 'si professionnel', placeholder: '000 000 000 00000' }))));
+  }
+
+  function etapeIntervention() {
+    const casesNature = KezLogic.NATURES.map((nature) => {
+      const input = el('input', { type: 'checkbox', checked: fiche.natures.includes(nature.id) });
+      const wrap = el('label', { class: 'choice' + (input.checked ? ' on' : '') }, input, el('div', {}, nature.libelle));
+      input.addEventListener('change', () => {
+        if (input.checked) { if (!fiche.natures.includes(nature.id)) fiche.natures.push(nature.id); }
+        else fiche.natures = fiche.natures.filter((n) => n !== nature.id);
+        wrap.className = 'choice' + (input.checked ? ' on' : '');
+        if (nature.id.startsWith('controle') && input.checked && !fiche.controleEtancheite) {
+          fiche.controleEtancheite = true;
+          fiche.controleDate = fiche.controleDate || fiche.dateIntervention;
+          construire();
+        }
+        sauverBrouillon(); rafraichir();
+      });
+      return wrap;
+    });
+
+    const zoneControle = el('div', {});
+    const remplirControle = () => {
+      zoneControle.textContent = '';
+      if (!fiche.controleEtancheite) return;
+      zoneControle.appendChild(el('div', { class: 'grid two', style: 'margin-top:12px' },
+        champ('Détecteur manuel de fuite [5]', 'detecteurId', { full: true, placeholder: 'Marque, modèle, n° de série, date d\'étalonnage' }),
+        champ('Contrôlé le [5]', 'controleDate', { type: 'date' })));
+      zoneControle.appendChild(el('div', { class: 'legend' }, 'Fuites constatées [10]'));
+      zoneControle.appendChild(segment('Fuite constatée lors du contrôle', 'fuiteConstatee',
+        [{ value: 'non', label: 'Non' }, { value: 'oui', label: 'Oui' }], () => construire()));
+      if (fiche.fuiteConstatee === 'oui') {
+        for (let i = 0; i < 3; i++) {
+          const fuite = fiche.fuites[i] || (fiche.fuites[i] = { loca: '', rep: '' });
+          const loca = el('input', { type: 'text', value: fuite.loca, placeholder: 'Localisation de la fuite ' + (i + 1) });
+          loca.addEventListener('input', () => { fuite.loca = loca.value; sauverBrouillon(); });
+          const seg = ['', 'realisee', 'afaire'].map((valeur) => el('button', {
+            type: 'button', class: fuite.rep === valeur ? 'on' : '',
+            onclick(ev) {
+              fuite.rep = valeur;
+              for (const b of ev.currentTarget.parentNode.children) b.className = '';
+              ev.currentTarget.className = 'on';
+              sauverBrouillon();
+            },
+          }, valeur === '' ? '—' : valeur === 'realisee' ? 'Réparée' : 'À faire'));
+          zoneControle.appendChild(el('div', { class: 'field', style: 'margin-top:10px' },
+            loca, el('div', { class: 'segment', style: 'margin-top:6px' }, ...seg)));
+        }
+      }
+    };
+    remplirControle();
+
+    return el('div', {},
+      el('div', { class: 'card' },
+        el('h2', {}, "Nature de l'intervention"),
+        el('p', {}, 'Une ou plusieurs cases, comme sur le formulaire papier.'),
+        el('div', { class: 'choices' }, ...casesNature),
+        fiche.natures.includes('autre')
+          ? el('div', { style: 'margin-top:10px' }, champ('Préciser', 'autrePrecision', { placeholder: 'Nature de l\'intervention' }))
+          : null),
+      el('div', { class: 'card' },
+        el('h2', {}, "Contrôle d'étanchéité"),
+        el('p', {}, 'Détection permanente, détecteur utilisé et fuites relevées.'),
+        segment('Système permanent de détection de fuites [6]', 'detecteurPermanent',
+          [{ value: 'non', label: 'Non' }, { value: 'oui', label: 'Oui' }]),
+        el('div', { style: 'margin-top:12px' },
+          bascule("Un contrôle d'étanchéité a été réalisé", 'Renseigne les cadres [5] et [10] du CERFA', 'controleEtancheite', () => construire())),
+        zoneControle),
+      el('div', { class: 'card' }, el('h2', {}, 'Lecture réglementaire'), el('div', { id: 'reglementaire' })));
+  }
+
+  function etapeFluide() {
+    const zone = el('div', {});
+    if (fiche.manipulation) {
+      zone.appendChild(el('div', { class: 'legend' }, 'Fluide chargé [11]'));
+      zone.appendChild(el('div', { class: 'grid two' },
+        champ('A — fluide vierge (kg)', 'qteVierge', { inputMode: 'decimal', placeholder: '0,000' }),
+        champ('B — fluide recyclé (kg)', 'qteRecycle', { inputMode: 'decimal', placeholder: '0,000' }),
+        champ('C — fluide régénéré (kg)', 'qteRegenere', { inputMode: 'decimal', placeholder: '0,000' }),
+        champ('Dénomination si changement de fluide', 'denomChange', { placeholder: 'Ex. R32 en remplacement de R410A' })));
+      zone.appendChild(el('div', { class: 'legend' }, 'Fluide récupéré [11]'));
+      zone.appendChild(el('div', { class: 'grid two' },
+        champ('D — destiné au traitement (kg)', 'qteTraitement', { inputMode: 'decimal', placeholder: '0,000' }),
+        champ('E — conservé pour réintroduction (kg)', 'qteReutilisation', { inputMode: 'decimal', placeholder: '0,000' }),
+        champ('Identification du ou des contenants', 'contenants', { placeholder: 'N° de bouteille de récupération' }),
+        champ('N° de BSFF (Trackdéchets)', 'bsff', { hint: 'si connu', placeholder: 'FR-BSFF-…' })));
+      zone.appendChild(el('div', { class: 'legend' }, 'Destination du fluide récupéré [13]'));
+      zone.appendChild(champ("Installation prévue de destination", 'installDestination',
+        { type: 'textarea', rows: 2, placeholder: 'Nom, SIRET et adresse du centre de traitement' }));
+      zone.appendChild(el('div', { id: 'bilanFluide', style: 'margin-top:12px' }));
+    }
+
+    return el('div', {},
+      el('div', { class: 'card' },
+        el('h2', {}, 'Manipulation du fluide'),
+        el('p', {}, 'Les quantités du cadre [11] et la dénomination ADR/RID du cadre [12].'),
+        bascule("J'ai chargé ou récupéré du fluide", 'Appoint, recharge, tirage, récupération', 'manipulation', () => construire()),
+        zone),
+      el('div', { class: 'card' },
+        el('h2', {}, 'Observations [14]'),
+        champ("Détail de l'intervention", 'observations', { type: 'textarea', rows: 5, placeholder: 'Travaux réalisés, relevés de pressions et températures, essais, pièces remplacées, conseils au client…' })));
+  }
+
+  function etapeSignatures() {
+    return el('div', {},
+      el('div', { class: 'card' },
+        el('h2', {}, 'Signatures'),
+        el('p', {}, "Les deux signataires attestent que l'opération a été effectuée."),
+        el('div', { class: 'grid two' },
+          champ('Nom du signataire opérateur', 'signOpNom'),
+          champ('Qualité', 'signOpQualite'),
+          champ('Nom du signataire détenteur', 'signDetNom', { placeholder: fiche.detenteurNom || 'Nom du client' }),
+          champ('Qualité', 'signDetQualite')),
+        el('div', { style: 'margin-top:14px;display:grid;gap:12px' },
+          padSignature('Signature opérateur', 'signOpImg'),
+          padSignature('Signature détenteur', 'signDetImg'))),
+      el('div', { class: 'card' },
+        el('h2', {}, 'Vérification'),
+        el('div', { id: 'etat-sortie', style: 'margin-bottom:10px' }),
+        el('div', { id: 'verification' }),
+        el('button', { type: 'button', class: 'btn primary block', style: 'margin-top:14px', onclick: genererEtPartager },
+          'Générer le CERFA PDF'),
+        el('p', { class: 'tiny', style: 'margin:10px 0 0' },
+          'Le PDF est produit sur l\'appareil, sans connexion. La fiche est enregistrée dans l\'historique.')));
+  }
+
+  /* ---------- panneaux dérivés ---------------------------------------------- */
+  function rafraichir() {
+    const zone = $('#reglementaire');
+    if (zone) {
+      const fluide = KezLogic.fluidOf(fiche.fluide);
+      const teq = KezLogic.teqCO2(fiche);
+      const s = KezLogic.seuils(fiche);
+      const prochain = KezLogic.prochainControle(fiche);
+      zone.textContent = '';
+      zone.appendChild(el('div', { class: 'readout' },
+        el('div', {}, el('span', {}, 'Tonnage éq. CO2'),
+          el('strong', {}, teq.toFixed(3).replace('.', ',') + ' t'),
+          el('small', {}, fluide ? 'PRG ' + fluide.prg + ' · ' + fluide.famille : '—')),
+        el('div', {}, el('span', {}, 'Contrôle périodique'),
+          el('strong', {}, s.controleObligatoire ? 'tous les ' + s.periode + ' mois' : 'non requis'),
+          el('small', {}, s.controleObligatoire
+            ? (fiche.detecteurPermanent === 'oui' && fluide && fluide.famille !== 'HCFC' ? 'avec détection permanente' : 'sans détection permanente')
+            : 'sous le seuil réglementaire')),
+        el('div', {}, el('span', {}, 'Prochaine échéance'),
+          el('strong', {}, prochain || '—'),
+          el('small', {}, prochain ? 'à compter de cette intervention' : 'renseigne la date'))));
+      if (fluide && fluide.famille === 'AUTRE') {
+        zone.appendChild(el('div', { class: 'panel', style: 'margin-top:10px' },
+          el('p', { class: 'muted', style: 'margin:0' },
+            fluide.nom + " n'est pas un gaz fluoré : ni seuil de contrôle d'étanchéité, ni cadre [7] à cocher. La fiche reste utile comme trace d'intervention.")));
+      }
+      if (s.controleObligatoire && fluide) {
+        const bornes = s.base === 'teq'
+          ? ['5 t ≤ teqCO2 < 50 t', '50 t ≤ teqCO2 < 500 t', 'teqCO2 ≥ 500 t']
+          : fluide.famille === 'HCFC'
+            ? ['2 kg ≤ Q < 30 kg', '30 kg ≤ Q < 300 kg', 'Q ≥ 300 kg']
+            : ['1 kg ≤ Q < 10 kg', '10 kg ≤ Q < 100 kg', 'Q ≥ 100 kg'];
+        zone.appendChild(el('div', { class: 'panel accent', style: 'margin-top:10px' },
+          el('p', { class: 'muted', style: 'margin:0;color:inherit' },
+            'Cadre [7] : ' + fluide.famille + ' — ' + bornes[s.niveau - 1] + '. Cadre [' +
+            (fiche.detecteurPermanent === 'oui' && fluide.famille !== 'HCFC' ? '9' : '8') + '] : ' + s.periode + ' mois.')));
+      }
+    }
+
+    const bilan = $('#bilanFluide');
+    if (bilan) {
+      const t = KezLogic.totaux(fiche);
+      bilan.textContent = '';
+      bilan.appendChild(el('div', { class: 'readout' },
+        el('div', {}, el('span', {}, 'Chargé total (A+B+C)'), el('strong', {}, KezLogic.kg(t.chargee) + ' kg')),
+        el('div', {}, el('span', {}, 'Récupéré total (D+E)'), el('strong', {}, KezLogic.kg(t.recuperee) + ' kg'))));
+      const fluide = KezLogic.fluidOf(fiche.fluide);
+      if (KezLogic.num(fiche.qteTraitement) > 0 && fluide) {
+        bilan.appendChild(el('div', { class: 'panel accent', style: 'margin-top:10px' },
+          el('p', { class: 'muted', style: 'margin:0;color:inherit' },
+            'Cadre [12] coché automatiquement : ' + (fluide.inflammable
+              ? 'UN 3161 — rubrique 16 05 04* (fluide inflammable)'
+              : 'UN 1078 — rubrique 14 06 01* (fluide non inflammable)') + '.')));
+      }
+    }
+
+    const verif = $('#verification');
+    if (verif) {
+      const { erreurs, avertissements } = KezLogic.validation(fiche);
+      verif.textContent = '';
+      if (erreurs.length) {
+        verif.appendChild(el('div', { class: 'panel danger' },
+          el('h3', {}, 'À compléter avant de générer'),
+          el('ul', {}, ...erreurs.map((e) => el('li', {}, e)))));
+      }
+      if (avertissements.length) {
+        verif.appendChild(el('div', { class: 'panel warn', style: erreurs.length ? 'margin-top:10px' : '' },
+          el('h3', {}, 'À vérifier'),
+          el('ul', {}, ...avertissements.map((a) => el('li', {}, a)))));
+      }
+      if (!erreurs.length && !avertissements.length) {
+        verif.appendChild(el('div', { class: 'panel' },
+          el('p', { class: 'muted', style: 'margin:0' }, 'Fiche complète. Tu peux générer le PDF.')));
+      }
+    }
+
+    majEtatAnalyse();
+    majEtatSortie();
+
+    const etapes = document.querySelectorAll('#steps button');
+    etapes.forEach((bouton, i) => {
+      bouton.className = i === etape ? 'active' : i < etape ? 'done' : '';
+    });
+  }
+
+  /* ---------- génération ---------------------------------------------------- */
+  async function genererEtPartager() {
+    const { erreurs } = KezLogic.validation(fiche);
+    if (erreurs.length) { toast(erreurs[0], 'err'); return; }
+    try {
+      const signatures = {
+        operateur: { bytes: dataUrlVersOctets(fiche.signOpImg) },
+        detenteur: { bytes: dataUrlVersOctets(fiche.signDetImg) },
+      };
+      const octets = KezLogic.genererPdf(fiche, signatures);
+      const nom = KezLogic.nomFichier(fiche);
+      const blob = new Blob([octets], { type: 'application/pdf' });
+      enregistrerFiche();
+      await livrer(blob, nom);
+    } catch (erreur) {
+      console.error(erreur);
+      toast('Génération impossible : ' + erreur.message, 'err');
+    }
+  }
+
+  const estIOS = () => /iP(hone|ad|od)/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+  /* Page publiée sur claude.ai : l'enregistrement passe par la plateforme.
+     En fichier local, window.claude n'existe pas et on garde les voies
+     habituelles (partage iOS, téléchargement). */
+  /* Dans une page publiée, le PDF ne peut sortir que par la plateforme : le
+     cadre d'affichage bloque les téléchargements ordinaires. On vérifie donc
+     tôt, pour le dire avant que la fiche soit remplie pour rien. */
+  const sortie = { capacite: undefined, dansClaude: false };
+  let sondeSortie = null;
+
+  function capaciteEnregistrement() {
+    if (sondeSortie) return sondeSortie;
+    sondeSortie = (async () => {
+      if (typeof window.claude === 'undefined' || typeof window.claude.use !== 'function') return null;
+      sortie.dansClaude = true;
+      try { return await window.claude.use('downloads'); } catch (e) { return null; }
+    })().then((v) => { sortie.capacite = v; return v; })
+      .catch(() => { sortie.capacite = null; return null; });
+    return sondeSortie;
+  }
+
+  async function livrer(blob, nom) {
+    const plateforme = await capaciteEnregistrement();
+    if (plateforme) {
+      try {
+        await plateforme.save({ filename: nom, data: blob });
+        toast('Enregistré : ' + nom);
+      } catch (e) {
+        const code = e && e.code;
+        if (code === 'declined') toast('Enregistrement annulé.');
+        else if (code === 'rate_limited') toast('Une demande est déjà en cours, réessaie dans un instant.', 'err');
+        else toast('Enregistrement impossible : ' + ((e && e.message) || 'erreur inconnue'), 'err');
+      }
+      return;
+    }
+
+    const file = new File([blob], nom, { type: blob.type || 'application/octet-stream' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: nom });
+        toast('CERFA généré.');
+        return;
+      } catch (e) {
+        if (e && e.name === 'AbortError') return;
+      }
+    }
+    const url = URL.createObjectURL(blob);
+    if (estIOS()) {
+      // iOS ignore l'attribut download : on ouvre le document, le partage se
+      // fait ensuite depuis la visionneuse (Enregistrer dans Fichiers, Mail…).
+      window.open(url, '_blank');
+      toast('Document ouvert : utilise le bouton Partager pour l\'enregistrer.');
+    } else {
+      const lien = el('a', { href: url, download: nom });
+      document.body.appendChild(lien);
+      lien.click();
+      lien.remove();
+      toast('Fichier généré : ' + nom);
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
+  }
+
+  function enregistrerFiche() {
+    const copie = JSON.parse(JSON.stringify(fiche));
+    if (!reglages.garderPhotos) copie.photo = '';
+    copie.modifie = new Date().toISOString();
+    const index = fiches.findIndex((f) => f.id === copie.id);
+    if (index >= 0) fiches[index] = copie; else fiches.unshift(copie);
+    if (!sauverFiches() && copie.photo) {
+      copie.photo = '';
+      sauverFiches();
+    }
+    const numero = parseInt(String(fiche.ficheNo).replace(reglages.prefixe, ''), 10);
+    if (Number.isFinite(numero) && numero >= reglages.compteur) {
+      reglages.compteur = numero + 1;
+      sauverReglages();
+    }
+  }
+
+  /* ---------- historique ----------------------------------------------------- */
+  function vueHistorique() {
+    const liste = el('div', {});
+    if (!fiches.length) {
+      liste.appendChild(el('p', { class: 'empty' }, 'Aucune fiche enregistrée pour le moment.'));
+    }
+    for (const item of fiches) {
+      liste.appendChild(el('div', { class: 'fiche' },
+        el('span', { class: 'num' }, item.ficheNo || '—'),
+        el('div', { class: 'meta' },
+          el('b', {}, item.detenteurNom || 'Sans nom'),
+          el('span', {}, [KezLogic.dateFr(item.dateIntervention),
+            [item.marque, item.modele].filter(Boolean).join(' '),
+            item.fluide].filter(Boolean).join(' · '))),
+        el('button', { type: 'button', onclick: () => rouvrir(item) }, 'Ouvrir'),
+        el('button', { type: 'button', onclick: () => regenerer(item) }, 'PDF')));
+    }
+
+    return el('div', {},
+      el('div', { class: 'card' },
+        el('h2', {}, 'Historique des fiches'),
+        el('p', {}, fiches.length + ' fiche' + (fiches.length > 1 ? 's' : '') +
+          ' sur cet appareil. Le PDF signé reste la pièce à conserver 5 ans.'),
+        liste),
+      el('div', { class: 'card' },
+        el('h2', {}, 'Sauvegarde'),
+        el('p', {}, 'Les fiches vivent dans ce navigateur : exporte régulièrement.'),
+        el('div', { class: 'row' },
+          el('button', { type: 'button', class: 'btn', onclick: exporter }, 'Exporter (.json)'),
+          el('label', { class: 'filebtn', style: 'flex:1' }, 'Importer une sauvegarde',
+            el('input', { type: 'file', accept: 'application/json,.json', onchange: importer })))));
+  }
+
+  function rouvrir(item) {
+    fiche = JSON.parse(JSON.stringify(item));
+    sauverBrouillon();
+    vue = 'saisie'; etape = 0;
+    construire();
+    toast('Fiche ' + (item.ficheNo || '') + ' rouverte.');
+  }
+
+  async function regenerer(item) {
+    try {
+      const signatures = {
+        operateur: { bytes: dataUrlVersOctets(item.signOpImg) },
+        detenteur: { bytes: dataUrlVersOctets(item.signDetImg) },
+      };
+      const octets = KezLogic.genererPdf(item, signatures);
+      await livrer(new Blob([octets], { type: 'application/pdf' }), KezLogic.nomFichier(item));
+    } catch (e) { toast('Génération impossible : ' + e.message, 'err'); }
+  }
+
+  function exporter() {
+    const donnees = { format: 'kez-cerfa', version: 1, exporte: new Date().toISOString(), reglages, fiches };
+    const blob = new Blob([JSON.stringify(donnees, null, 1)], { type: 'application/json' });
+    livrer(blob, 'kez-cerfa-sauvegarde-' + aujourdhui() + '.json');
+  }
+
+  async function importer(ev) {
+    const file = ev.currentTarget.files && ev.currentTarget.files[0];
+    ev.currentTarget.value = '';
+    if (!file) return;
+    try {
+      const donnees = JSON.parse(await file.text());
+      if (!donnees || !Array.isArray(donnees.fiches)) throw new Error('fichier non reconnu');
+      const connus = new Set(fiches.map((f) => f.id));
+      let ajoutees = 0;
+      for (const item of donnees.fiches) {
+        if (item && item.id && !connus.has(item.id)) { fiches.push(item); ajoutees++; }
+      }
+      fiches.sort((a, b) => String(b.cree || '').localeCompare(String(a.cree || '')));
+      sauverFiches();
+      construire();
+      toast(ajoutees + ' fiche(s) importée(s).');
+    } catch (e) { toast('Import impossible : ' + e.message, 'err'); }
+  }
+
+  /* ---------- réglages ------------------------------------------------------- */
+  function vueReglages() {
+    const champReglage = (libelle, cle, opts) => {
+      const o = opts || {};
+      const input = o.type === 'textarea'
+        ? el('textarea', { rows: o.rows || 2 })
+        : el('input', { type: o.type || 'text', placeholder: o.placeholder || '', inputMode: o.inputMode || null });
+      input.value = reglages[cle] == null ? '' : reglages[cle];
+      input.addEventListener('input', () => { reglages[cle] = input.value; sauverReglages(); });
+      return el('label', { class: 'field' + (o.full ? ' full' : '') }, el('span', {}, libelle), input);
+    };
+
+    const photos = el('input', { type: 'checkbox', checked: !!reglages.garderPhotos });
+    photos.addEventListener('change', () => { reglages.garderPhotos = photos.checked; sauverReglages(); });
+
+    return el('div', {},
+      el('div', { class: 'card' },
+        el('h2', {}, 'Opérateur'),
+        el('p', {}, 'Repris automatiquement sur chaque nouvelle fiche.'),
+        el('div', { class: 'grid two' },
+          champReglage('Raison sociale', 'operateurNom', { full: true }),
+          champReglage('Adresse', 'operateurAdresse', { type: 'textarea', full: true }),
+          champReglage('SIRET', 'operateurSiret', { placeholder: '000 000 000 00000' }),
+          champReglage("N° d'attestation de capacité", 'attestationNo'),
+          champReglage('Nom du technicien', 'signOpNom'),
+          champReglage('Qualité', 'signOpQualite'))),
+      el('div', { class: 'card' },
+        el('h2', {}, 'Valeurs récurrentes'),
+        el('div', { class: 'grid two' },
+          champReglage('Détecteur manuel de fuite', 'detecteurId', { full: true, placeholder: 'Marque, modèle, n° de série, étalonnage' }),
+          champReglage('Destination du fluide récupéré', 'installDestination', { type: 'textarea', full: true, placeholder: 'Nom, SIRET et adresse du centre de traitement' }))),
+      el('div', { class: 'card' },
+        el('h2', {}, 'Numérotation'),
+        el('div', { class: 'grid two' },
+          champReglage('Préfixe', 'prefixe', { placeholder: '2026-' }),
+          champReglage('Prochain numéro', 'compteur', { type: 'number', inputMode: 'numeric' })),
+        el('p', { class: 'tiny', style: 'margin:10px 0 0' }, 'Prochaine fiche : ' + numeroSuivant()),
+        el('hr', { class: 'sep' }),
+        el('label', { class: 'choice' + (reglages.garderPhotos ? ' on' : '') }, photos,
+          el('div', {}, el('b', {}, "Conserver les photos de plaque dans l'historique"),
+            el('small', {}, "À décocher si la mémoire du navigateur sature")))),
+      el('div', { class: 'card' },
+        el('h2', {}, 'À propos'),
+        el('p', { class: 'muted' },
+          "Fiche d'intervention CERFA 15497*04 (articles R. 543-79 et R. 543-82 du code de l'environnement). " +
+          "Le PDF produit est aplati : le formulaire n'est plus modifiable après signature. " +
+          "Les signatures sont des tracés manuscrits ajoutés au document, pas des signatures électroniques qualifiées."),
+        el('p', { class: 'muted' },
+          "Les PRG et les seuils sont ceux du règlement européen sur les gaz fluorés. " +
+          "À revérifier après chaque révision réglementaire avant usage en production."),
+        el('button', {
+          type: 'button', class: 'btn danger block', style: 'margin-top:8px',
+          onclick() {
+            if (!confirmer('Effacer toutes les fiches enregistrées sur cet appareil ?', false)) return;
+            fiches = []; sauverFiches(); construire(); toast('Historique vidé.');
+          },
+        }, "Vider l'historique")));
+  }
+
+  /* ---------- rendu général --------------------------------------------------- */
+  const RENDUS = [etapeClient, etapeEquipement, etapeIntervention, etapeFluide, etapeSignatures];
+
+  function construire() {
+    const racine = $('#app');
+    racine.textContent = '';
+
+    const barreEtapes = $('#steps');
+    barreEtapes.classList.toggle('hidden', vue !== 'saisie');
+    if (vue === 'saisie' && !barreEtapes.children.length) {
+      ETAPES.forEach((nom, i) => {
+        barreEtapes.appendChild(el('button', {
+          type: 'button',
+          onclick: () => { etape = i; construire(); },
+        }, el('span', { class: 'n' }, String(i + 1)), el('b', {}, nom)));
+      });
+    }
+
+    if (vue === 'saisie') racine.appendChild(RENDUS[etape]());
+    else if (vue === 'historique') racine.appendChild(vueHistorique());
+    else racine.appendChild(vueReglages());
+
+    const actions = $('#actions');
+    actions.textContent = '';
+    const inner = el('div', { class: 'inner' });
+    if (vue === 'saisie') {
+      inner.appendChild(el('button', {
+        type: 'button', class: 'btn', disabled: etape === 0,
+        onclick: () => { etape = Math.max(0, etape - 1); construire(); window.scrollTo(0, 0); },
+      }, 'Retour'));
+      if (etape < ETAPES.length - 1) {
+        inner.appendChild(el('button', {
+          type: 'button', class: 'btn dark',
+          onclick: () => { etape = Math.min(ETAPES.length - 1, etape + 1); construire(); window.scrollTo(0, 0); },
+        }, 'Continuer'));
+      } else {
+        inner.appendChild(el('button', { type: 'button', class: 'btn primary', onclick: genererEtPartager }, 'Générer le PDF'));
+      }
+    } else {
+      inner.appendChild(el('button', {
+        type: 'button', class: 'btn dark block',
+        onclick: () => { vue = 'saisie'; construire(); },
+      }, 'Retour à la fiche'));
+    }
+    actions.appendChild(inner);
+
+    rafraichir();
+  }
+
+  /* ---------- barre supérieure ------------------------------------------------ */
+  function initTopbar() {
+    $('#btn-nouvelle').addEventListener('click', () => {
+      if (!confirmer('Commencer une nouvelle fiche ? La saisie en cours sera remplacée.', true)) return;
+      fiche = ficheVierge();
+      sauverBrouillon();
+      vue = 'saisie'; etape = 0;
+      construire();
+      window.scrollTo(0, 0);
+    });
+    const onglet = (id, cible) => $(id).addEventListener('click', () => {
+      vue = vue === cible ? 'saisie' : cible;
+      construire();
+      window.scrollTo(0, 0);
+      for (const [bouton, nom] of [[$('#btn-historique'), 'historique'], [$('#btn-reglages'), 'reglages']]) {
+        bouton.setAttribute('aria-current', vue === nom ? 'true' : 'false');
+      }
+    });
+    onglet('#btn-historique', 'historique');
+    onglet('#btn-reglages', 'reglages');
+  }
+
+  document.addEventListener('paste', (event) => {
+    if (vue !== 'saisie' || etape !== 1) return;
+    const file = imageDuPressePapiers(event);
+    if (!file) return;
+    event.preventDefault();
+    const zone = document.querySelector('.photo');
+    if (zone && zone.__importer) void zone.__importer(file);
+  });
+
+  initTopbar();
+  construire();
+  capaciteEnregistrement().then(() => majEtatSortie());
+})();
