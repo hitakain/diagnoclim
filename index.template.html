@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="KEZ CERFA">
+<meta name="description" content="Fiche d'intervention CERFA 15497*04 — KEZ Énergie. Fonctionne hors ligne.">
+<meta name="theme-color" content="#0b1a2a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icone-192.png">
+<link rel="icon" href="icone-192.png">
+<title>KEZ Énergie — CERFA 15497*04</title>
+<style>
+/*__CSS__*/
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="logo">KEZ</div>
+  <div class="title">
+    <p>KEZ Énergie</p>
+    <h1>Fiche d'intervention</h1>
+  </div>
+  <div class="spacer"></div>
+  <button type="button" id="btn-nouvelle" title="Nouvelle fiche">Nouvelle</button>
+  <button type="button" id="btn-historique" aria-current="false" title="Historique">Fiches</button>
+  <button type="button" id="btn-reglages" aria-current="false" title="Réglages">Réglages</button>
+</header>
+
+<nav class="steps" id="steps" aria-label="Étapes"></nav>
+
+<main id="app"></main>
+
+<div class="actions" id="actions"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<noscript>
+  <p style="padding:20px">Cette fiche a besoin de JavaScript pour fonctionner.</p>
+</noscript>
+
+<script>
+/*__ASSETS__*/
+</script>
+<script>
+/*__PDFGEN__*/
+</script>
+<script>
+/*__LOGIC__*/
+</script>
+<script>
+/*__UI__*/
+</script>
+<script>
+/* Installation hors ligne : le service worker garde l'application en cache.
+   Il ne s'active qu'en https (ou sur localhost). */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  });
+}
+</script>
+</body>
+</html>
