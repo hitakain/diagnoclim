@@ -23,24 +23,24 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --ink: #e9eff5;
-    --topbar-bg: #060d14;
-    --ink-soft: #a8b8c7;
-    --ink-faint: #7d8fa1;
-    --line: #22303f;
-    --line-strong: #33455a;
-    --bg: #0a1119;
-    --surface: #121c26;
-    --surface-alt: #16222e;
-    --accent: #2bb7cd;
-    --accent-ink: #04202a;
-    --accent-soft: #10303a;
-    --warn: #e0a458;
-    --warn-soft: #2c2213;
-    --danger: #ef8b83;
-    --danger-soft: #2e1715;
-    --ok: #5cc48c;
-    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 30px rgba(0, 0, 0, .35);
+  --ink: #e9eff5;
+  --topbar-bg: #060d14;
+  --ink-soft: #a8b8c7;
+  --ink-faint: #7d8fa1;
+  --line: #22303f;
+  --line-strong: #33455a;
+  --bg: #0a1119;
+  --surface: #121c26;
+  --surface-alt: #16222e;
+  --accent: #2bb7cd;
+  --accent-ink: #04202a;
+  --accent-soft: #10303a;
+  --warn: #e0a458;
+  --warn-soft: #2c2213;
+  --danger: #ef8b83;
+  --danger-soft: #2e1715;
+  --ok: #5cc48c;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 30px rgba(0, 0, 0, .35);
   }
 }
 :root[data-theme="dark"] {
@@ -231,3 +231,4 @@ input::placeholder, textarea::placeholder { color: var(--ink-faint); }
 .muted { color: var(--ink-soft); font-size: 13px; }
 .tiny { font-size: 12px; color: var(--ink-faint); }
 hr.sep { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
+

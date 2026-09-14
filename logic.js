@@ -290,3 +290,4 @@ const KezLogic = (() => {
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { KezLogic, FLUIDES, NATURES };
+

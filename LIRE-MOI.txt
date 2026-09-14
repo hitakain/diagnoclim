@@ -1,0 +1,85 @@
+KEZ ÉNERGIE — FICHE D'INTERVENTION CERFA 15497*04
+Mise en service sur iPhone
+==================================================
+
+CE QU'IL Y A DANS CE DOSSIER
+
+  index.html            l'application entière, CERFA vierge compris
+  manifest.webmanifest  ce qui lui donne un nom et une icône une fois installée
+  sw.js                 ce qui la fait fonctionner sans réseau
+  icones/               l'icône KEZ sur l'écran d'accueil
+
+Quatre éléments, rien à compiler, rien à installer.
+
+
+ÉTAPE 1 — DÉPOSER LES FICHIERS SUR TON HÉBERGEMENT
+
+  1. Connecte-toi à ton espace IONOS.
+  2. Ouvre le gestionnaire de fichiers, va dans le dossier du site
+     (souvent nommé "htdocs", "www" ou "public_html").
+  3. Crée un dossier : cerfa
+  4. Dépose dedans index.html, manifest.webmanifest, sw.js,
+     et le dossier icones AVEC ses trois images.
+
+  L'adresse devient : https://kezenergie.fr/cerfa/
+
+  IMPORTANT : il faut du https. C'est ce qui autorise le fonctionnement
+  hors ligne et l'installation sur l'écran d'accueil. IONOS fournit le
+  certificat SSL gratuitement, il suffit qu'il soit activé pour le domaine.
+  En http simple, l'application s'ouvre mais perd le hors ligne.
+
+
+ÉTAPE 2 — INSTALLER SUR L'IPHONE
+
+  1. Ouvre https://kezenergie.fr/cerfa/ dans SAFARI.
+     (Pas Chrome : sur iOS, seul Safari sait installer sur l'écran d'accueil.)
+  2. Appuie sur le bouton Partager, en bas au milieu.
+  3. Fais défiler, choisis "Sur l'écran d'accueil".
+  4. Valide avec "Ajouter".
+
+  L'icône KEZ apparaît sur ton écran d'accueil. Elle s'ouvre en plein écran,
+  sans barre d'adresse : elle se comporte comme une vraie application.
+
+
+ÉTAPE 3 — RÉGLER UNE FOIS POUR TOUTES
+
+  Ouvre l'application, bouton "Réglages" en haut à droite, et renseigne :
+
+    - raison sociale, adresse, SIRET
+    - n° d'attestation de capacité (dès qu'il est attribué)
+    - nom et qualité du technicien
+    - détecteur manuel de fuite habituel
+    - centre de traitement habituel du fluide récupéré
+    - préfixe et prochain numéro de fiche
+
+  Ces valeurs se reportent automatiquement sur chaque nouvelle fiche.
+
+
+CE QUI MARCHE SANS RÉSEAU
+
+  Tout, sauf le premier chargement : saisie, calculs réglementaires,
+  signatures, génération du PDF, historique des fiches.
+
+  Vérifié en conditions réelles : réseau coupé, le CERFA sort quand même.
+
+
+METTRE À JOUR PLUS TARD
+
+  Remplacer index.html par la nouvelle version, et changer le numéro de
+  version dans sw.js (la ligne  const CACHE = 'kez-cerfa-v1';  devient
+  'kez-cerfa-v2'). Sans ce changement de numéro, les téléphones qui ont
+  déjà l'application garderont l'ancienne en cache.
+
+
+À SAVOIR
+
+  Les fiches sont conservées dans le téléphone, pas sur un serveur.
+  Exporte la sauvegarde de temps en temps : bouton "Fiches", puis
+  "Exporter (.json)". Le PDF signé reste de toute façon la pièce à
+  conserver cinq ans.
+
+  Les signatures sont des tracés manuscrits ajoutés au document, pas des
+  signatures électroniques qualifiées.
+
+  Les PRG et les seuils réglementaires sont à revérifier après chaque
+  révision du règlement européen — voir AUDIT-KEZ-CERFA.md, section 6.

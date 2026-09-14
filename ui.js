@@ -795,28 +795,9 @@
           },
         }, 'Coller une image copiée'),
         el('div', { class: 'legend' }, 'Ou coller le texte de la plaque'),
-        el('button', {
-          type: 'button', class: 'btn dark block',
-          onclick: async () => {
-            try {
-              if (!navigator.clipboard || !navigator.clipboard.readText) throw new Error('indisponible');
-              const contenu = await navigator.clipboard.readText();
-              if (!contenu || !contenu.trim()) {
-                annoncerAnalyse('Le presse-papiers est vide : lance d\'abord le raccourci qui lit la plaque.', true);
-                return;
-              }
-              texte.value = contenu;
-              await analyser();
-            } catch (e) {
-              annoncerAnalyse("Ce navigateur ne permet pas de lire le presse-papiers. Colle le texte à la main dans le cadre ci-dessous.", true);
-            }
-          },
-        }, 'Coller le texte copié et analyser'),
-        el('p', { class: 'tiny', style: 'margin:8px 0 10px' },
-          'Après le raccourci iPhone qui lit la plaque : un appui ici et les champs se remplissent.'),
         texte,
         el('button', { type: 'button', class: 'btn block', style: 'margin-top:8px',
-          onclick: () => { void analyser(); } }, 'Analyser le texte ci-dessus')),
+          onclick: () => { void analyser(); } }, 'Reprendre les infos du texte')),
 
       el('div', { class: 'card' },
         el('h2', {}, 'Équipement'),
@@ -1401,3 +1382,4 @@
   construire();
   capaciteEnregistrement().then(() => majEtatSortie());
 })();
+
