@@ -1,0 +1,35 @@
+{
+  "name": "ebay-agent",
+  "version": "0.1.0",
+  "description": "Agent local-first : photo -> identification -> prix -> annonce eBay publiee automatiquement",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "ebay-agent": "./dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli/index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@zxing/library": "^0.21.3",
+    "axios": "^1.7.7",
+    "chokidar": "^3.6.0",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.5",
+    "jimp": "^0.22.12",
+    "node-cron": "^3.0.3",
+    "tesseract.js": "^5.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.2"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}
